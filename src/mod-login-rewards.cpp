@@ -100,7 +100,7 @@ void SavePlayerLastRewardData()
 // 모듈 전용 설정 파일을 로드하고 파싱하는 함수
 void LoadModuleSpecificConfig_LoginRewards()
 {
-    std::string configFilePath = "./conf/mod-login-rewards.conf.dist";
+    std::string configFilePath = "./configs/modules/mod-login-rewards.conf.dist";
 
     std::ifstream configFile;
 
