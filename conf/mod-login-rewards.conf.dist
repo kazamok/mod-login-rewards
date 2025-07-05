@@ -1,0 +1,18 @@
+#----------------------------------------------------------
+# Login Rewards Module Settings
+#----------------------------------------------------------
+#
+# Enable Login Rewards Module (0 = disabled, 1 = enabled)
+LoginRewards.Enable = 1
+
+# Daily gold amount to reward (in Copper)
+LoginRewards.DailyGoldAmount = 100000
+
+# Daily reward reset hour (UTC, 0-23)
+LoginRewards.DailyResetHourUTC = 0
+
+# Message to send to player upon receiving reward
+LoginRewards.AnnounceMessage = "일일 접속 보상으로 %gold%골드를 받았습니다!"
+
+# Show announce message (0 = disabled, 1 = enabled)
+LoginRewards.ShowAnnounceMessage = 1
