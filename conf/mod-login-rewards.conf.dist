@@ -5,8 +5,8 @@
 # Enable Login Rewards Module (0 = disabled, 1 = enabled)
 LoginRewards.Enable = 1
 
-# Daily gold amount to reward (in Copper)
-LoginRewards.DailyGoldAmount = 100000
+# Daily gold amount to reward (in Copper, 1000000 = 10골드)
+LoginRewards.DailyGoldAmount = 1000000
 
 # Daily reward reset hour (UTC, 0-23)
 LoginRewards.DailyResetHourUTC = 0
