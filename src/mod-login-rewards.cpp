@@ -18,8 +18,9 @@
 // 전역 변수 선언
 // 모듈 설정 값
 bool g_loginRewardsEnabled = false;
+bool g_loginRewardsShowModuleStatus = false;
 uint32 g_loginRewardsDailyGoldAmount = 0;
-uint32 g_loginRewardsDailyResetHourUTC = 0;
+uint32 g_loginRewardsDailyResetHourKST = 0;
 std::string g_loginRewardsAnnounceMessage = "";
 bool g_loginRewardsShowAnnounceMessage = false;
 
@@ -125,8 +126,9 @@ void LoadModuleSpecificConfig_LoginRewards()
 
     // 기본값 설정
     g_loginRewardsEnabled = true;
-    g_loginRewardsDailyGoldAmount = 100000; // 1골드
-    g_loginRewardsDailyResetHourUTC = 0;
+    g_loginRewardsShowModuleStatus = true;
+    g_loginRewardsDailyGoldAmount = 100000; // 10골드
+    g_loginRewardsDailyResetHourKST = 0;
     g_loginRewardsAnnounceMessage = "일일 접속 보상으로 %gold%골드를 받았습니다!";
     g_loginRewardsShowAnnounceMessage = true;
 
@@ -152,14 +154,18 @@ void LoadModuleSpecificConfig_LoginRewards()
                 {
                     g_loginRewardsEnabled = (value == "1");
                 }
+                else if (key == "LoginRewards.ShowModuleStatus")
+                {
+                    g_loginRewardsShowModuleStatus = (value == "1");
+                }
                 else if (key == "LoginRewards.DailyGoldAmount")
                 {
                     try { g_loginRewardsDailyGoldAmount = std::stoul(value); }
                     catch (const std::exception& e) { LOG_ERROR("module", "[접속 보상] 잘못된 골드 양 설정: {} ({})", value, e.what()); }
                 }
-                else if (key == "LoginRewards.DailyResetHourUTC")
+                else if (key == "LoginRewards.DailyResetHourKST")
                 {
-                    try { g_loginRewardsDailyResetHourUTC = std::stoul(value); }
+                    try { g_loginRewardsDailyResetHourKST = std::stoul(value); }
                     catch (const std::exception& e) { LOG_ERROR("module", "[접속 보상] 잘못된 리셋 시간 설정: {} ({})", value, e.what()); }
                 }
                 else if (key == "LoginRewards.AnnounceMessage")
@@ -225,6 +231,12 @@ public:
         if (!g_loginRewardsEnabled)
             return;
 
+        // 모듈 활성화 상태 메시지 표시
+        if (g_loginRewardsShowModuleStatus)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("|cff4CFF00[일일접속보상]|r 이 서버는 접속 보상 모듈이 활성화되어 있습니다.");
+        }
+
         ObjectGuid::LowType playerGuidLow = player->GetGUID().GetCounter();
         time_t lastRewardTime = 0;
 
@@ -235,12 +247,12 @@ public:
             lastRewardTime = it->second;
         }
 
-        // 현재 시간 (UTC)
+        // 현재 시간 (KST)
         time_t currentTime = GameTime::GetGameTime().count();
-        struct tm* currentTm = std::gmtime(&currentTime);
+        struct tm* currentTm = std::localtime(&currentTime);
 
-        // 마지막 보상 시간 (UTC)
-        struct tm* lastRewardTm = std::gmtime(&lastRewardTime);
+        // 마지막 보상 시간 (KST)
+        struct tm* lastRewardTm = std::localtime(&lastRewardTime);
 
         bool canReceiveReward = false;
 
@@ -250,18 +262,23 @@ public:
         }
         else
         {
-            // 마지막 보상 날짜와 현재 날짜가 다른지 확인 (UTC 기준)
-            if (currentTm->tm_year > lastRewardTm->tm_year ||
-                (currentTm->tm_year == lastRewardTm->tm_year && currentTm->tm_mon > lastRewardTm->tm_mon) ||
-                (currentTm->tm_year == lastRewardTm->tm_year && currentTm->tm_mon == lastRewardTm->tm_mon && currentTm->tm_mday > lastRewardTm->tm_mday))
+            // KST 기준으로 날짜가 변경되었는지 확인
+            bool isNewDay = (currentTm->tm_year > lastRewardTm->tm_year) ||
+                            (currentTm->tm_year == lastRewardTm->tm_year && currentTm->tm_yday > lastRewardTm->tm_yday);
+
+            // 리셋 시간을 지났는지 확인
+            bool hasPassedResetHour = currentTm->tm_hour >= g_loginRewardsDailyResetHourKST;
+            bool hadPassedResetHourLastTime = lastRewardTm->tm_hour >= g_loginRewardsDailyResetHourKST;
+
+            if (isNewDay)
             {
-                // 날짜가 바뀌었으면 보상 가능
+                // 날짜가 바뀌었거나, 리셋 시간을 넘겼다면 보상 가능
                 canReceiveReward = true;
             }
-            else if (currentTm->tm_year == lastRewardTm->tm_year && currentTm->tm_mon == lastRewardTm->tm_mon && currentTm->tm_mday == lastRewardTm->tm_mday)
+            else // 같은 날인 경우
             {
-                // 같은 날짜인 경우, 리셋 시간을 기준으로 보상 가능 여부 판단
-                if (currentTm->tm_hour >= g_loginRewardsDailyResetHourUTC && lastRewardTm->tm_hour < g_loginRewardsDailyResetHourUTC)
+                // 리셋 시간을 지나지 않은 상태에서 리셋 시간을 넘겼을 때 보상 가능
+                if (hasPassedResetHour && !hadPassedResetHourLastTime)
                 {
                     canReceiveReward = true;
                 }
@@ -289,7 +306,7 @@ public:
                     gold_ss << (g_loginRewardsDailyGoldAmount / 10000); // 구리 -> 골드 변환
                     message.replace(pos, 6, gold_ss.str());
                 }
-                ChatHandler(player->GetSession()).PSendSysMessage("%s", message.c_str());
+                ChatHandler(player->GetSession()).SendSysMessage(message);
             }
         }
     }
