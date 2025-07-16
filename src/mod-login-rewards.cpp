@@ -129,7 +129,7 @@ void LoadModuleSpecificConfig_LoginRewards()
     g_loginRewardsShowModuleStatus = true;
     g_loginRewardsDailyGoldAmount = 100000; // 10골드
     g_loginRewardsDailyResetHourKST = 0;
-    g_loginRewardsAnnounceMessage = "일일 접속 보상으로 %gold%골드를 받았습니다!";
+    g_loginRewardsAnnounceMessage = "|cffFF69B4[일일접속보상]|r 일일 접속 보상으로 %gold%골드를 받았습니다!";
     g_loginRewardsShowAnnounceMessage = true;
 
     std::string line;
@@ -234,7 +234,7 @@ public:
         // 모듈 활성화 상태 메시지 표시
         if (g_loginRewardsShowModuleStatus)
         {
-            ChatHandler(player->GetSession()).SendSysMessage("|cff4CFF00[일일접속보상]|r 이 서버는 접속 보상 모듈이 활성화되어 있습니다.");
+            ChatHandler(player->GetSession()).SendSysMessage("|cffFF69B4[일일접속보상]|r 이 서버는 접속 보상 모듈이 활성화되어 있습니다.");
         }
 
         ObjectGuid::LowType playerGuidLow = player->GetGUID().GetCounter();
