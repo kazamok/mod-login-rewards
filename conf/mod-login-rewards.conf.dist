@@ -1,18 +1,25 @@
 #----------------------------------------------------------
-# Login Rewards Module Settings
+# 일일 접속 보상 모듈 설정
 #----------------------------------------------------------
 #
-# Enable Login Rewards Module (0 = disabled, 1 = enabled)
+# 모듈 활성화 (0 = 비활성화, 1 = 활성화)
 LoginRewards.Enable = 1
 
-# Daily gold amount to reward (in Copper, 1000000 = 10골드)
+# 로그인 시 모듈 활성화 상태 메시지 표시 여부 (0 = 표시 안 함, 1 = 표시 함)
+# 모든 플레이어에게 로그인 시 "접속 보상 모듈이 활성화되어 있습니다." 와 같은 안내를 표시합니다.
+LoginRewards.ShowModuleStatus = 1
+
+# 일일 보상으로 지급할 골드 금액 (단위: 코퍼)
+# 예시: 100골드를 지급하려면 1000000 으로 설정 (1골드 = 10,000코퍼)
 LoginRewards.DailyGoldAmount = 1000000
 
-# Daily reward reset hour (UTC, 0-23)
-LoginRewards.DailyResetHourUTC = 0
+# 일일 보상이 초기화되는 시간 (한국 시간, 0-23시)
+# 예시: 0으로 설정하면 매일 자정(00:00)에 초기화됩니다.
+LoginRewards.DailyResetHourKST = 0
 
-# Message to send to player upon receiving reward
+# 보상 지급 시 플레이어에게 표시될 메시지
+# %gold% 부분은 실제 지급된 골드 금액으로 자동 변경됩니다.
 LoginRewards.AnnounceMessage = "일일 접속 보상으로 %gold%골드를 받았습니다!"
 
-# Show announce message (0 = disabled, 1 = enabled)
+# 보상 지급 메시지 표시 여부 (0 = 표시 안 함, 1 = 표시 함)
 LoginRewards.ShowAnnounceMessage = 1
