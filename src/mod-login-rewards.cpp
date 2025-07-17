@@ -24,11 +24,11 @@ uint32 g_loginRewardsDailyResetHourKST = 0;
 std::string g_loginRewardsAnnounceMessage = "";
 bool g_loginRewardsShowAnnounceMessage = false;
 
-// 플레이어별 마지막 보상 지급 시간 저장 (GUID -> Timestamp)
-std::unordered_map<ObjectGuid::LowType, time_t> g_playerLastRewardTime;
+// 계정별 마지막 보상 지급 시간 저장 (Account ID -> Timestamp)
+std::unordered_map<uint32, time_t> g_accountLastRewardTime;
 
 // 데이터 파일 경로
-const std::string PLAYER_LAST_REWARD_FILE = "logs/login_rewards/player_last_reward.csv";
+const std::string ACCOUNT_LAST_REWARD_FILE = "logs/login_rewards/account_last_reward.csv";
 
 // 로그 디렉토리가 존재하는지 확인하고, 없으면 생성하는 함수
 void EnsureLoginRewardsLogDirectory()
@@ -41,14 +41,14 @@ void EnsureLoginRewardsLogDirectory()
     }
 }
 
-// 플레이어 마지막 보상 시간 데이터를 파일에서 로드하는 함수
-void LoadPlayerLastRewardData()
+// 계정 마지막 보상 시간 데이터를 파일에서 로드하는 함수
+void LoadAccountLastRewardData()
 {
     EnsureLoginRewardsLogDirectory();
-    std::ifstream infile(PLAYER_LAST_REWARD_FILE);
+    std::ifstream infile(ACCOUNT_LAST_REWARD_FILE);
     if (!infile.is_open())
     {
-        LOG_INFO("module", "[접속 보상] 플레이어 마지막 보상 데이터 파일을 찾을 수 없습니다. 새로 생성합니다.");
+        LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 파일을 찾을 수 없습니다. 새로 생성합니다.");
         return;
     }
 
@@ -59,43 +59,43 @@ void LoadPlayerLastRewardData()
     while (std::getline(infile, line))
     {
         std::stringstream ss(line);
-        std::string guidStr, timestampStr;
-        if (std::getline(ss, guidStr, ',') && std::getline(ss, timestampStr, ','))
+        std::string accountIdStr, timestampStr;
+        if (std::getline(ss, accountIdStr, ',') && std::getline(ss, timestampStr, ','))
         {
             try
             {
-                ObjectGuid::LowType guid = std::stoul(guidStr);
+                uint32 accountId = std::stoul(accountIdStr);
                 time_t timestamp = static_cast<time_t>(std::stoll(timestampStr));
-                g_playerLastRewardTime[guid] = timestamp;
+                g_accountLastRewardTime[accountId] = timestamp;
             }
             catch (const std::exception& e)
             {
-                LOG_ERROR("module", "[접속 보상] 플레이어 마지막 보상 데이터 파싱 오류: {} ({})", line, e.what());
+                LOG_ERROR("module", "[접속 보상] 계정 마지막 보상 데이터 파싱 오류: {} ({})", line, e.what());
             }
         }
     }
     infile.close();
-    LOG_INFO("module", "[접속 보상] 플레이어 마지막 보상 데이터 로드 완료. {}개 항목.", g_playerLastRewardTime.size());
+    LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 로드 완료. {}개 항목.", g_accountLastRewardTime.size());
 }
 
 // 플레이어 마지막 보상 시간 데이터를 파일에 저장하는 함수
-void SavePlayerLastRewardData()
+void SaveAccountLastRewardData()
 {
     EnsureLoginRewardsLogDirectory();
-    std::ofstream outfile(PLAYER_LAST_REWARD_FILE);
+    std::ofstream outfile(ACCOUNT_LAST_REWARD_FILE);
     if (!outfile.is_open())
     {
-        LOG_ERROR("module", "[접속 보상] 플레이어 마지막 보상 데이터 파일을 열 수 없습니다: {}", PLAYER_LAST_REWARD_FILE);
+        LOG_ERROR("module", "[접속 보상] 계정 마지막 보상 데이터 파일을 열 수 없습니다: {}", ACCOUNT_LAST_REWARD_FILE);
         return;
     }
 
-    outfile << "PlayerGUID,LastRewardTimestamp\n"; // 헤더
-    for (const auto& pair : g_playerLastRewardTime)
+    outfile << "AccountID,LastRewardTimestamp"; // 헤더
+    for (const auto& pair : g_accountLastRewardTime)
     {
-        outfile << pair.first << "," << pair.second << "\n";
+        outfile << pair.first << "," << pair.second << "";
     }
     outfile.close();
-    LOG_INFO("module", "[접속 보상] 플레이어 마지막 보상 데이터 저장 완료. {}개 항목.", g_playerLastRewardTime.size());
+    LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 저장 완료. {}개 항목.", g_accountLastRewardTime.size());
 }
 
 // 모듈 전용 설정 파일을 로드하고 파싱하는 함수
@@ -206,7 +206,7 @@ public:
         if (g_loginRewardsEnabled)
         {
             LOG_INFO("module", "[접속 보상] 모듈 활성화됨.");
-            LoadPlayerLastRewardData(); // 서버 시작 시 플레이어 데이터 로드
+            LoadAccountLastRewardData(); // 서버 시작 시 계정 데이터 로드
         }
     }
 
@@ -215,7 +215,7 @@ public:
         if (g_loginRewardsEnabled)
         {
             LOG_INFO("module", "[접속 보상] 모듈 비활성화됨. 데이터 저장 중...");
-            SavePlayerLastRewardData(); // 서버 종료 시 플레이어 데이터 저장
+            SaveAccountLastRewardData(); // 서버 종료 시 계정 데이터 저장
         }
     }
 };
@@ -237,12 +237,12 @@ public:
             ChatHandler(player->GetSession()).SendSysMessage("|cffFF69B4[일일접속보상]|r 이 서버는 접속 보상 모듈이 활성화되어 있습니다.");
         }
 
-        ObjectGuid::LowType playerGuidLow = player->GetGUID().GetCounter();
+        uint32 accountId = player->GetSession()->GetAccountId();
         time_t lastRewardTime = 0;
 
-        // 플레이어의 마지막 보상 시간 가져오기
-        auto it = g_playerLastRewardTime.find(playerGuidLow);
-        if (it != g_playerLastRewardTime.end())
+        // 계정의 마지막 보상 시간 가져오기
+        auto it = g_accountLastRewardTime.find(accountId);
+        if (it != g_accountLastRewardTime.end())
         {
             lastRewardTime = it->second;
         }
@@ -289,10 +289,10 @@ public:
         {
             // 골드 지급
             player->ModifyMoney(g_loginRewardsDailyGoldAmount);
-            LOG_INFO("module", "[접속 보상] 플레이어 {} (GUID: {})에게 {} 골드 지급.", player->GetName(), playerGuidLow, g_loginRewardsDailyGoldAmount);
+            LOG_INFO("module", "[접속 보상] 계정 {}에게 {} 골드 지급.", accountId, g_loginRewardsDailyGoldAmount);
 
             // 마지막 보상 시간 업데이트
-            g_playerLastRewardTime[playerGuidLow] = currentTime;
+            g_accountLastRewardTime[accountId] = currentTime;
 
             // 메시지 전송
             if (g_loginRewardsShowAnnounceMessage)
