@@ -1,3 +1,4 @@
+
 /*
 mod-login-rewards.cpp */
 
@@ -58,6 +59,16 @@ std::string Time_tToString(time_t time)
     return std::string(buffer);
 }
 
+// YYYY-MM-DD 형식의 날짜 문자열을 반환하는 함수
+std::string GetCurrentDateString()
+{
+    char buffer[11];
+    time_t now = time(0);
+    struct tm* tm_info = std::localtime(&now);
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d", tm_info);
+    return std::string(buffer);
+}
+
 // YYYY-MM-DD HH:MM:SS 형식의 문자열을 time_t로 변환하는 함수
 time_t StringToTime_t(const std::string& time_str)
 {
@@ -67,7 +78,7 @@ time_t StringToTime_t(const std::string& time_str)
     return std::mktime(&tm_info);
 }
 
-// 계정 마지막 보상 시간 데이터를 파일에서 로드하는 함수
+// 계정 마지막 보상 시간 데이터를 파일에서 로드하는 함수 (상태 파일)
 void LoadAccountLastRewardData()
 {
     EnsureLoginRewardsLogDirectory();
@@ -104,7 +115,7 @@ void LoadAccountLastRewardData()
     LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 로드 완료. {}개 항목.", g_accountLastRewardInfo.size());
 }
 
-// 플레이어 마지막 보상 시간 데이터를 파일에 저장하는 함수
+// 플레이어 마지막 보상 시간 데이터를 파일에 저장하는 함수 (상태 파일)
 void SaveAccountLastRewardData()
 {
     EnsureLoginRewardsLogDirectory();
@@ -123,6 +134,31 @@ void SaveAccountLastRewardData()
     outfile.close();
     LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 저장 완료. {}개 항목.", g_accountLastRewardInfo.size());
 }
+
+// 일일 보상 로그를 파일에 기록하는 함수
+void LogRewardToFile(uint32 accountId, const std::string& charName, time_t rewardTime)
+{
+    EnsureLoginRewardsLogDirectory();
+    std::string dailyLogFilename = "logs/login_rewards/reward_log_" + GetCurrentDateString() + ".csv";
+    
+    bool fileExists = std::filesystem::exists(dailyLogFilename);
+
+    std::ofstream outfile(dailyLogFilename, std::ios_base::app);
+    if (!outfile.is_open())
+    {
+        LOG_ERROR("module", "[접속 보상] 일일 로그 파일을 열 수 없습니다: {}", dailyLogFilename);
+        return;
+    }
+
+    if (!fileExists)
+    {
+        outfile << "AccountID,CharacterName,RewardTimestamp" << std::endl;
+    }
+
+    outfile << accountId << "," << charName << "," << Time_tToString(rewardTime) << std::endl;
+    outfile.close();
+}
+
 
 // 모듈 전용 설정 파일을 로드하고 파싱하는 함수
 void LoadModuleSpecificConfig_LoginRewards()
@@ -315,11 +351,17 @@ public:
         {
             // 골드 지급
             player->ModifyMoney(g_loginRewardsDailyGoldAmount);
-            LOG_INFO("module", "[접속 보상] 계정 {} (캐릭터: {})에게 {} 골드 지급.", accountId, player->GetName().c_str(), g_loginRewardsDailyGoldAmount);
+            std::string charName = player->GetName().c_str();
+            LOG_INFO("module", "[접속 보상] 계정 {} (캐릭터: {})에게 {} 골드 지급.", accountId, charName, g_loginRewardsDailyGoldAmount);
 
             // 마지막 보상 정보 업데이트 (시간 및 캐릭터 이름)
-            g_accountLastRewardInfo[accountId] = { currentTime, player->GetName().c_str() };
-            SaveAccountLastRewardData(); // 보상 지급 즉시 파일에 저장
+            g_accountLastRewardInfo[accountId] = { currentTime, charName };
+            
+            // 1. 상태 파일 업데이트
+            SaveAccountLastRewardData();
+
+            // 2. 일일 로그 파일에 기록
+            LogRewardToFile(accountId, charName, currentTime);
 
             // 메시지 전송
             if (g_loginRewardsShowAnnounceMessage)
