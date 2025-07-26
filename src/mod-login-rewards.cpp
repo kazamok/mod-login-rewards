@@ -297,6 +297,7 @@ public:
 
             // 마지막 보상 시간 업데이트
             g_accountLastRewardTime[accountId] = currentTime;
+            SaveAccountLastRewardData(); // 보상 지급 즉시 파일에 저장
 
             // 메시지 전송
             if (g_loginRewardsShowAnnounceMessage)
