@@ -1,4 +1,3 @@
-
 /*
 mod-login-rewards.cpp */
 
@@ -28,8 +27,13 @@ uint32 g_loginRewardsDailyResetHourKST = 0;
 std::string g_loginRewardsAnnounceMessage = "";
 bool g_loginRewardsShowAnnounceMessage = false;
 
-// 계정별 마지막 보상 지급 시간 저장 (Account ID -> Timestamp)
-std::unordered_map<uint32, time_t> g_accountLastRewardTime;
+// 계정별 마지막 보상 지급 정보 (시간 및 캐릭터 이름)
+struct RewardInfo
+{
+    time_t timestamp;
+    std::string characterName;
+};
+std::unordered_map<uint32, RewardInfo> g_accountLastRewardInfo;
 
 // 데이터 파일 경로
 const std::string ACCOUNT_LAST_REWARD_FILE = "logs/login_rewards/account_last_reward.csv";
@@ -43,6 +47,24 @@ void EnsureLoginRewardsLogDirectory()
         std::filesystem::create_directories(logDir);
         LOG_INFO("module", "[접속 보상] 로그 디렉토리 생성: {}", logDir.string());
     }
+}
+
+// 타임스탬프를 YYYY-MM-DD HH:MM:SS 형식의 문자열로 변환하는 함수
+std::string Time_tToString(time_t time)
+{
+    char buffer[20];
+    struct tm* tm_info = std::localtime(&time);
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
+    return std::string(buffer);
+}
+
+// YYYY-MM-DD HH:MM:SS 형식의 문자열을 time_t로 변환하는 함수
+time_t StringToTime_t(const std::string& time_str)
+{
+    struct tm tm_info = {};
+    std::stringstream ss(time_str);
+    ss >> std::get_time(&tm_info, "%Y-%m-%d %H:%M:%S");
+    return std::mktime(&tm_info);
 }
 
 // 계정 마지막 보상 시간 데이터를 파일에서 로드하는 함수
@@ -63,14 +85,14 @@ void LoadAccountLastRewardData()
     while (std::getline(infile, line))
     {
         std::stringstream ss(line);
-        std::string accountIdStr, timestampStr;
-        if (std::getline(ss, accountIdStr, ',') && std::getline(ss, timestampStr, ','))
+        std::string accountIdStr, charName, timestampStr;
+        if (std::getline(ss, accountIdStr, ',') && std::getline(ss, charName, ',') && std::getline(ss, timestampStr))
         {
             try
             {
                 uint32 accountId = std::stoul(accountIdStr);
-                time_t timestamp = static_cast<time_t>(std::stoll(timestampStr));
-                g_accountLastRewardTime[accountId] = timestamp;
+                time_t timestamp = StringToTime_t(timestampStr);
+                g_accountLastRewardInfo[accountId] = { timestamp, charName };
             }
             catch (const std::exception& e)
             {
@@ -79,7 +101,7 @@ void LoadAccountLastRewardData()
         }
     }
     infile.close();
-    LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 로드 완료. {}개 항목.", g_accountLastRewardTime.size());
+    LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 로드 완료. {}개 항목.", g_accountLastRewardInfo.size());
 }
 
 // 플레이어 마지막 보상 시간 데이터를 파일에 저장하는 함수
@@ -93,13 +115,13 @@ void SaveAccountLastRewardData()
         return;
     }
 
-    outfile << "AccountID,LastRewardTimestamp"; // 헤더
-    for (const auto& pair : g_accountLastRewardTime)
+    outfile << "AccountID,CharacterName,LastRewardTimestamp" << std::endl; // 헤더
+    for (const auto& pair : g_accountLastRewardInfo)
     {
-        outfile << pair.first << "," << pair.second << "";
+        outfile << pair.first << "," << pair.second.characterName << "," << Time_tToString(pair.second.timestamp) << std::endl;
     }
     outfile.close();
-    LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 저장 완료. {}개 항목.", g_accountLastRewardTime.size());
+    LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 저장 완료. {}개 항목.", g_accountLastRewardInfo.size());
 }
 
 // 모듈 전용 설정 파일을 로드하고 파싱하는 함수
@@ -245,10 +267,10 @@ public:
         time_t lastRewardTime = 0;
 
         // 계정의 마지막 보상 시간 가져오기
-        auto it = g_accountLastRewardTime.find(accountId);
-        if (it != g_accountLastRewardTime.end())
+        auto it = g_accountLastRewardInfo.find(accountId);
+        if (it != g_accountLastRewardInfo.end())
         {
-            lastRewardTime = it->second;
+            lastRewardTime = it->second.timestamp;
         }
 
         // 현재 시간 (KST)
@@ -293,10 +315,10 @@ public:
         {
             // 골드 지급
             player->ModifyMoney(g_loginRewardsDailyGoldAmount);
-            LOG_INFO("module", "[접속 보상] 계정 {}에게 {} 골드 지급.", accountId, g_loginRewardsDailyGoldAmount);
+            LOG_INFO("module", "[접속 보상] 계정 {} (캐릭터: {})에게 {} 골드 지급.", accountId, player->GetName().c_str(), g_loginRewardsDailyGoldAmount);
 
-            // 마지막 보상 시간 업데이트
-            g_accountLastRewardTime[accountId] = currentTime;
+            // 마지막 보상 정보 업데이트 (시간 및 캐릭터 이름)
+            g_accountLastRewardInfo[accountId] = { currentTime, player->GetName().c_str() };
             SaveAccountLastRewardData(); // 보상 지급 즉시 파일에 저장
 
             // 메시지 전송
