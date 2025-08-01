@@ -52,7 +52,7 @@ LoginRewards.DailyResetHourKST = 4
 #                     0으로 설정하면 즉시 지급됩니다.
 #        Default:     60 (1분)
 #
-LoginRewards.RewardDelaySeconds = 60
+LoginRewards.RewardDelaySeconds = 300
 
 ###################################################################################################
 #
