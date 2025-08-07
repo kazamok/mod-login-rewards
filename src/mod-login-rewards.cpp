@@ -1,4 +1,3 @@
-
 /*
 mod-login-rewards.cpp */
 
@@ -7,7 +6,7 @@ mod-login-rewards.cpp */
 #include "Chat.h"
 #include "Config.h"
 #include "World.h"
-#include "WorldSessionMgr.h"
+#include "WorldSession.h" // WorldSessionMgr 대신 WorldSession 헤더 포함
 #include "GameTime.h"
 #include "SharedDefines.h"
 #include <fstream>
@@ -18,6 +17,13 @@ mod-login-rewards.cpp */
 #include <sstream>
 #include <unordered_map>
 #include <ctime>
+#include <mutex> // mutex 헤더 추가
+
+// Windows에서 timegm의 대체 함수인 _mkgmtime를 사용하도록 정의
+#ifdef _WIN32
+#define timegm _mkgmtime
+#endif
+
 
 // 전역 변수 선언
 // 모듈 설정 값
@@ -37,12 +43,19 @@ struct RewardInfo
 };
 std::unordered_map<uint32, RewardInfo> g_accountLastRewardInfo;
 
+// ===== IP 기반 보상 기록을 위한 전역 변수 추가 =====
+std::unordered_map<std::string, time_t> g_ipLastRewardTime;
+// =================================================
+
 // 플레이어 로그인 시간 추적 (GUID, 로그인 시간)
 std::unordered_map<uint32, time_t> g_playerLoginTimes;
 std::mutex g_playerLoginTimesMutex; // g_playerLoginTimes 접근 제어를 위한 뮤텍스
 
 // 데이터 파일 경로
 const std::string ACCOUNT_LAST_REWARD_FILE = "logs/login_rewards/account_last_reward.csv";
+// ===== IP 기반 보상 기록 파일 경로 추가 =====
+const std::string IP_LAST_REWARD_FILE = "logs/login_rewards/ip_last_reward.csv";
+// ==========================================
 
 // 로그 디렉토리가 존재하는지 확인하고, 없으면 생성하는 함수
 void EnsureLoginRewardsLogDirectory()
@@ -95,8 +108,7 @@ void LoadAccountLastRewardData()
     }
 
     std::string line;
-    // 헤더 스킵
-    std::getline(infile, line);
+    std::getline(infile, line); // 헤더 스킵
 
     while (std::getline(infile, line))
     {
@@ -137,11 +149,64 @@ void SaveAccountLastRewardData()
         outfile << pair.first << "," << pair.second.characterName << "," << Time_tToString(pair.second.timestamp) << std::endl;
     }
     outfile.close();
-    LOG_INFO("module", "[접속 보상] 계정 마지막 보상 데이터 저장 완료. {}개 항목.", g_accountLastRewardInfo.size());
 }
 
-// 일일 보상 로그를 파일에 기록하는 함수
-void LogRewardToFile(uint32 accountId, const std::string& charName, time_t rewardTime)
+// ===== IP 마지막 보상 시간 데이터를 로드/저장하는 함수 추가 =====
+void LoadIpLastRewardData()
+{
+    EnsureLoginRewardsLogDirectory();
+    std::ifstream infile(IP_LAST_REWARD_FILE);
+    if (!infile.is_open())
+    {
+        LOG_INFO("module", "[접속 보상] IP 마지막 보상 데이터 파일을 찾을 수 없습니다. 새로 생성합니다.");
+        return;
+    }
+
+    std::string line;
+    std::getline(infile, line); // 헤더 스킵
+
+    while (std::getline(infile, line))
+    {
+        std::stringstream ss(line);
+        std::string ipAddress, timestampStr;
+        if (std::getline(ss, ipAddress, ',') && std::getline(ss, timestampStr))
+        {
+            try
+            {
+                time_t timestamp = StringToTime_t(timestampStr);
+                g_ipLastRewardTime[ipAddress] = timestamp;
+            }
+            catch (const std::exception& e)
+            {
+                LOG_ERROR("module", "[접속 보상] IP 마지막 보상 데이터 파싱 오류: {} ({})", line, e.what());
+            }
+        }
+    }
+    infile.close();
+    LOG_INFO("module", "[접속 보상] IP 마지막 보상 데이터 로드 완료. {}개 항목.", g_ipLastRewardTime.size());
+}
+
+void SaveIpLastRewardData()
+{
+    EnsureLoginRewardsLogDirectory();
+    std::ofstream outfile(IP_LAST_REWARD_FILE);
+    if (!outfile.is_open())
+    {
+        LOG_ERROR("module", "[접속 보상] IP 마지막 보상 데이터 파일을 열 수 없습니다: {}", IP_LAST_REWARD_FILE);
+        return;
+    }
+
+    outfile << "IPAddress,LastRewardTimestamp" << std::endl; // 헤더
+    for (const auto& pair : g_ipLastRewardTime)
+    {
+        outfile << pair.first << "," << Time_tToString(pair.second) << std::endl;
+    }
+    outfile.close();
+}
+// ==========================================================
+
+// 일일 보상 로그를 파일에 기록하는 함수 (IP 주소 로깅 추가)
+void LogRewardToFile(uint32 accountId, const std::string& charName, const std::string& ipAddress, time_t rewardTime)
 {
     EnsureLoginRewardsLogDirectory();
     std::string dailyLogFilename = "logs/login_rewards/reward_log_" + GetCurrentDateString() + ".csv";
@@ -157,10 +222,10 @@ void LogRewardToFile(uint32 accountId, const std::string& charName, time_t rewar
 
     if (!fileExists)
     {
-        outfile << "AccountID,CharacterName,RewardTimestamp" << std::endl;
+        outfile << "AccountID,CharacterName,IPAddress,RewardTimestamp" << std::endl;
     }
 
-    outfile << accountId << "," << charName << "," << Time_tToString(rewardTime) << std::endl;
+    outfile << accountId << "," << charName << "," << ipAddress << "," << Time_tToString(rewardTime) << std::endl;
     outfile.close();
 }
 
@@ -217,49 +282,66 @@ void LoadModuleSpecificConfig_LoginRewards()
                 value.erase(0, value.find_first_not_of(" \t"));
                 value.erase(value.find_last_not_of(" \t") + 1);
 
-                if (key == "LoginRewards.Enable")
-                {
-                    g_loginRewardsEnabled = (value == "1");
-                }
-                else if (key == "LoginRewards.ShowModuleStatus")
-                {
-                    g_loginRewardsShowModuleStatus = (value == "1");
-                }
-                else if (key == "LoginRewards.DailyGoldAmount")
-                {
-                    try { g_loginRewardsDailyGoldAmount = std::stoul(value); }
-                    catch (const std::exception& e) { LOG_ERROR("module", "[접속 보상] 잘못된 골드 양 설정: {} ({})", value, e.what()); }
-                }
-                else if (key == "LoginRewards.DailyResetHourKST")
-                {
-                    try { g_loginRewardsDailyResetHourKST = std::stoul(value); }
-                    catch (const std::exception& e) { LOG_ERROR("module", "[접속 보상] 잘못된 리셋 시간 설정: {} ({})", value, e.what()); }
-                }
-                else if (key == "LoginRewards.RewardDelaySeconds")
-                {
-                    try { g_loginRewardsRewardDelaySeconds = std::stoul(value); }
-                    catch (const std::exception& e) { LOG_ERROR("module", "[접속 보상] 잘못된 지연 시간 설정: {} ({})", value, e.what()); }
-                }
+                if (key == "LoginRewards.Enable") g_loginRewardsEnabled = (value == "1");
+                else if (key == "LoginRewards.ShowModuleStatus") g_loginRewardsShowModuleStatus = (value == "1");
+                else if (key == "LoginRewards.DailyGoldAmount") try { g_loginRewardsDailyGoldAmount = std::stoul(value); } catch (const std::exception& e) { LOG_ERROR("module", "[접속 보상] 잘못된 골드 양 설정: {} ({})", value, e.what()); }
+                else if (key == "LoginRewards.DailyResetHourKST") try { g_loginRewardsDailyResetHourKST = std::stoul(value); } catch (const std::exception& e) { LOG_ERROR("module", "[접속 보상] 잘못된 리셋 시간 설정: {} ({})", value, e.what()); }
+                else if (key == "LoginRewards.RewardDelaySeconds") try { g_loginRewardsRewardDelaySeconds = std::stoul(value); } catch (const std::exception& e) { LOG_ERROR("module", "[접속 보상] 잘못된 지연 시간 설정: {} ({})", value, e.what()); }
                 else if (key == "LoginRewards.AnnounceMessage")
                 {
-                    if (value.length() >= 2 && value.front() == '"' && value.back() == '"')
-                    {
-                        g_loginRewardsAnnounceMessage = value.substr(1, value.length() - 2);
-                    }
-                    else
-                    {
-                        g_loginRewardsAnnounceMessage = value;
-                    }
+                    if (value.length() >= 2 && value.front() == '"' && value.back() == '"') g_loginRewardsAnnounceMessage = value.substr(1, value.length() - 2);
+                    else g_loginRewardsAnnounceMessage = value;
                 }
-                else if (key == "LoginRewards.ShowAnnounceMessage")
-                {
-                    g_loginRewardsShowAnnounceMessage = (value == "1");
-                }
+                else if (key == "LoginRewards.ShowAnnounceMessage") g_loginRewardsShowAnnounceMessage = (value == "1");
             }
         }
     }
     configFile.close();
 }
+
+// 보상 자격 여부를 판단하는 헬퍼 함수
+bool IsEligibleForReward(time_t lastRewardTime, time_t currentTime, uint32 resetHour)
+{
+    if (lastRewardTime == 0)
+    {
+        return true; // 첫 보상
+    }
+
+    struct tm currentTm = *std::localtime(&currentTime);
+    struct tm lastRewardTm = *std::localtime(&lastRewardTime);
+
+    // KST (UTC+9)를 고려하여 UTC 시간으로 변환
+    time_t current_utc = time(NULL);
+    struct tm current_utc_tm = *gmtime(&current_utc);
+    
+    // 오늘 리셋 시간 (UTC)
+    time_t today_reset_time_utc;
+    {
+        struct tm temp_tm = current_utc_tm;
+        temp_tm.tm_hour = (resetHour < 9) ? (resetHour + 24 - 9) : (resetHour - 9);
+        temp_tm.tm_min = 0;
+        temp_tm.tm_sec = 0;
+        today_reset_time_utc = timegm(&temp_tm);
+    }
+
+    // 어제 리셋 시간 (UTC)
+    time_t yesterday_reset_time_utc = today_reset_time_utc - 24 * 60 * 60;
+
+    // 마지막 보상 시간이 어제 리셋 시간보다 이전이고, 현재 시간이 오늘 리셋 시간 이후라면 보상 가능
+    if (lastRewardTime < today_reset_time_utc && currentTime >= today_reset_time_utc)
+    {
+        return true;
+    }
+    
+    // 마지막 보상 시간이 어제 리셋 시간 이전이라면 보상 가능
+    if (lastRewardTime < yesterday_reset_time_utc)
+    {
+        return true;
+    }
+
+    return false;
+}
+
 
 // 월드 서버 이벤트를 처리하는 클래스
 class mod_login_rewards_world : public WorldScript
@@ -269,7 +351,6 @@ public:
 
     void OnBeforeConfigLoad(bool reload) override
     {
-        // 모듈 전용 설정 파일을 로드하고 파싱합니다.
         LoadModuleSpecificConfig_LoginRewards();
     }
 
@@ -278,7 +359,8 @@ public:
         if (g_loginRewardsEnabled)
         {
             LOG_INFO("module", "[접속 보상] 모듈 활성화됨.");
-            LoadAccountLastRewardData(); // 서버 시작 시 계정 데이터 로드
+            LoadAccountLastRewardData();
+            LoadIpLastRewardData(); // ===== IP 데이터 로드 추가 =====
         }
     }
 
@@ -287,7 +369,8 @@ public:
         if (g_loginRewardsEnabled)
         {
             LOG_INFO("module", "[접속 보상] 모듈 비활성화됨. 데이터 저장 중...");
-            SaveAccountLastRewardData(); // 서버 종료 시 계정 데이터 저장
+            SaveAccountLastRewardData();
+            SaveIpLastRewardData(); // ===== IP 데이터 저장 추가 =====
         }
     }
 };
@@ -296,70 +379,58 @@ public:
 class mod_login_rewards_player : public PlayerScript
 {
 private:
-    // OnUpdate 이벤트를 1초에 한 번씩만 실행하기 위한 타이머
-    std::unordered_map<uint32, uint32> _updateTimers; // <PlayerGUID, Milliseconds>
+    std::unordered_map<uint32, uint32> _updateTimers;
     std::mutex _updateTimerMutex;
 
 public:
     mod_login_rewards_player() : PlayerScript("mod_login_rewards_player") { }
 
-    void OnPlayerLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override 
     {
-        if (!g_loginRewardsEnabled)
-            return;
+        if (!g_loginRewardsEnabled) return;
 
-        // 모듈 활성화 상태 메시지 표시
         if (g_loginRewardsShowModuleStatus)
         {
             ChatHandler(player->GetSession()).SendSysMessage("|cffFF69B4[일일접속보상]|r 이 서버는 접속 보상 모듈이 활성화되어 있습니다.");
         }
 
         uint32 guid = player->GetGUID().GetCounter();
-        // 플레이어의 로그인 시간을 기록
         {
             std::lock_guard<std::mutex> lock(g_playerLoginTimesMutex);
             g_playerLoginTimes[guid] = GameTime::GetGameTime().count();
         }
-        // OnUpdate 타이머 초기화
         {
             std::lock_guard<std::mutex> lock(_updateTimerMutex);
             _updateTimers[guid] = 0;
         }
     }
 
-    void OnPlayerLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override 
     {
-        if (!g_loginRewardsEnabled)
-            return;
+        if (!g_loginRewardsEnabled) return;
 
         uint32 guid = player->GetGUID().GetCounter();
-        // 플레이어 로그인 시간 기록에서 제거
         {
             std::lock_guard<std::mutex> lock(g_playerLoginTimesMutex);
             g_playerLoginTimes.erase(guid);
         }
-        // OnUpdate 타이머 기록에서 제거
         {
             std::lock_guard<std::mutex> lock(_updateTimerMutex);
             _updateTimers.erase(guid);
         }
     }
 
-    void OnPlayerUpdate(Player* player, uint32 diff)
+    void OnPlayerUpdate(Player* player, uint32 diff) override
     {
-        if (!g_loginRewardsEnabled)
-            return;
+        if (!g_loginRewardsEnabled) return;
 
         uint32 guid = player->GetGUID().GetCounter();
         bool timeToCheck = false;
 
-        // 1초마다 체크하기 위한 타이머 로직
         {
             std::lock_guard<std::mutex> lock(_updateTimerMutex);
             auto it = _updateTimers.find(guid);
-            if (it == _updateTimers.end())
-                return; // 타이머에 없으면 (이미 보상을 받았으면) 중단
-
+            if (it == _updateTimers.end()) return;
             it->second += diff;
             if (it->second >= 1000)
             {
@@ -368,10 +439,7 @@ public:
             }
         }
 
-        if (!timeToCheck)
-            return;
-
-        // --- 여기서부터 1초에 한 번씩만 실행됨 ---
+        if (!timeToCheck) return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
         time_t loginTime = 0;
@@ -379,80 +447,73 @@ public:
         {
             std::lock_guard<std::mutex> lock(g_playerLoginTimesMutex);
             auto it = g_playerLoginTimes.find(guid);
-            if (it == g_playerLoginTimes.end())
-                return; // 로그인 기록이 없으면 중단
+            if (it == g_playerLoginTimes.end()) return;
             loginTime = it->second;
         }
 
         time_t currentTime = GameTime::GetGameTime().count();
 
-        // 설정된 지연 시간이 지났는지 확인
-        if (currentTime - loginTime < g_loginRewardsRewardDelaySeconds)
-            return;
+        if (currentTime - loginTime < g_loginRewardsRewardDelaySeconds) return;
 
-        // --- 보상 자격 확인 로직 ---
-        time_t lastRewardTime = 0;
-        auto it_reward = g_accountLastRewardInfo.find(accountId);
-        if (it_reward != g_accountLastRewardInfo.end())
-            lastRewardTime = it_reward->second.timestamp;
-
-        struct tm* currentTm = std::localtime(&currentTime);
-        struct tm* lastRewardTm = std::localtime(&lastRewardTime);
-        bool canReceiveReward = false;
-
-        if (lastRewardTime == 0)
+        // ===== 핵심 로직 수정: 계정 확인 후 IP 확인 =====
+        
+        // 1. 계정 보상 자격 확인
+        time_t lastAccountRewardTime = 0;
+        auto it_account = g_accountLastRewardInfo.find(accountId);
+        if (it_account != g_accountLastRewardInfo.end())
         {
-            canReceiveReward = true;
-        }
-        else
-        {
-            bool isNewDay = (currentTm->tm_year > lastRewardTm->tm_year) ||
-                            (currentTm->tm_year == lastRewardTm->tm_year && currentTm->tm_yday > lastRewardTm->tm_yday);
-            bool hasPassedResetHour = currentTm->tm_hour >= g_loginRewardsDailyResetHourKST;
-            bool hadPassedResetHourLastTime = lastRewardTm->tm_hour >= g_loginRewardsDailyResetHourKST;
-
-            if (isNewDay)
-            {
-                canReceiveReward = hasPassedResetHour;
-            }
-            else
-            {
-                if (hasPassedResetHour && !hadPassedResetHourLastTime)
-                    canReceiveReward = true;
-            }
+            lastAccountRewardTime = it_account->second.timestamp;
         }
 
-        if (canReceiveReward)
+        if (IsEligibleForReward(lastAccountRewardTime, currentTime, g_loginRewardsDailyResetHourKST))
         {
-            player->ModifyMoney(g_loginRewardsDailyGoldAmount);
-            std::string charName = player->GetName().c_str();
-            LOG_INFO("module", "[접속 보상] 계정 {} (캐릭터: {})에게 {} 골드 지급.", accountId, charName, g_loginRewardsDailyGoldAmount);
-
-            g_accountLastRewardInfo[accountId] = { currentTime, charName };
-            SaveAccountLastRewardData();
-            LogRewardToFile(accountId, charName, currentTime);
-
-            if (g_loginRewardsShowAnnounceMessage)
+            // 2. IP 보상 자격 확인
+            std::string ipAddress = player->GetSession()->GetRemoteAddress();
+            time_t lastIpRewardTime = 0;
+            auto it_ip = g_ipLastRewardTime.find(ipAddress);
+            if (it_ip != g_ipLastRewardTime.end())
             {
-                std::string message = g_loginRewardsAnnounceMessage;
-                size_t pos = message.find("%gold%");
-                if (pos != std::string::npos)
+                lastIpRewardTime = it_ip->second;
+            }
+
+            if (IsEligibleForReward(lastIpRewardTime, currentTime, g_loginRewardsDailyResetHourKST))
+            {
+                // 3. 최종 보상 지급
+                player->ModifyMoney(g_loginRewardsDailyGoldAmount);
+                std::string charName = player->GetName();
+                LOG_INFO("module", "[접속 보상] 계정 {} (캐릭터: {}, IP: {})에게 {} 골드 지급.", accountId, charName, ipAddress, g_loginRewardsDailyGoldAmount);
+
+                // 계정과 IP 모두에 현재 시간으로 기록 업데이트
+                g_accountLastRewardInfo[accountId] = { currentTime, charName };
+                g_ipLastRewardTime[ipAddress] = currentTime;
+                
+                // 두 데이터 파일 모두 저장
+                SaveAccountLastRewardData();
+                SaveIpLastRewardData();
+                LogRewardToFile(accountId, charName, ipAddress, currentTime);
+
+                if (g_loginRewardsShowAnnounceMessage)
                 {
-                    std::stringstream gold_ss;
-                    gold_ss << (g_loginRewardsDailyGoldAmount / 10000);
-                    message.replace(pos, 6, gold_ss.str());
+                    std::string message = g_loginRewardsAnnounceMessage;
+                    size_t pos = message.find("%gold%");
+                    if (pos != std::string::npos)
+                    {
+                        std::stringstream gold_ss;
+                        gold_ss << (g_loginRewardsDailyGoldAmount / 10000);
+                        message.replace(pos, 6, gold_ss.str());
+                    }
+                    ChatHandler(player->GetSession()).SendSysMessage(message);
                 }
-                ChatHandler(player->GetSession()).SendSysMessage(message);
-            }
 
-            // 보상 처리 후 더 이상 체크하지 않도록 맵에서 제거
-            {
-                std::lock_guard<std::mutex> lock(g_playerLoginTimesMutex);
-                g_playerLoginTimes.erase(guid);
-            }
-            {
-                std::lock_guard<std::mutex> lock(_updateTimerMutex);
-                _updateTimers.erase(guid);
+                // 보상 처리 후 더 이상 체크하지 않도록 맵에서 제거
+                {
+                    std::lock_guard<std::mutex> lock(g_playerLoginTimesMutex);
+                    g_playerLoginTimes.erase(guid);
+                }
+                {
+                    std::lock_guard<std::mutex> lock(_updateTimerMutex);
+                    _updateTimers.erase(guid);
+                }
             }
         }
     }
