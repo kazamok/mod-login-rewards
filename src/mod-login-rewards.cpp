@@ -391,7 +391,7 @@ public:
 
         if (g_loginRewardsShowModuleStatus)
         {
-            ChatHandler(player->GetSession()).SendSysMessage("|cffFF69B4[일일접속보상]|r 이 서버는 접속 보상 모듈이 활성화되어 있습니다.");
+            ChatHandler(player->GetSession()).SendSysMessage("|cffFF69B4[일일접속보상]|r 접속 보상 모듈이 활성화되어 있습니다.");
         }
 
         uint32 guid = player->GetGUID().GetCounter();
