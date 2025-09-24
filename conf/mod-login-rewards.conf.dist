@@ -52,7 +52,7 @@ LoginRewards.DailyResetHourKST = 4
 #                     0으로 설정하면 즉시 지급됩니다.
 #        Default:     60 (1분)
 #
-LoginRewards.RewardDelaySeconds = 300
+LoginRewards.RewardDelaySeconds = 1800
 
 ###################################################################################################
 #
@@ -85,3 +85,4 @@ LoginRewards.AnnounceMessage = "일일 접속 보상으로 %gold%골드를 받�
 #                     0 - (표시 안 함)
 #
 LoginRewards.ShowAnnounceMessage = 1
+
