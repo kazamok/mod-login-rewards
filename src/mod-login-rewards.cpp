@@ -233,7 +233,7 @@ void LogRewardToFile(uint32 accountId, const std::string& charName, const std::s
 // 모듈 전용 설정 파일을 로드하고 파싱하는 함수
 void LoadModuleSpecificConfig_LoginRewards()
 {
-    std::string configFilePath = "./configs/modules/mod-login-rewards.conf.dist";
+    std::string configFilePath = "./configs/modules/mod-login-rewards.conf";
 
     std::ifstream configFile;
 
@@ -524,4 +524,5 @@ void Addmod_login_rewardsScripts()
 {
     new mod_login_rewards_world();
     new mod_login_rewards_player();
+
 }
