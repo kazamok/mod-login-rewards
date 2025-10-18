@@ -68,7 +68,7 @@ LoginRewards.RewardDelaySeconds = 1800
 #                     예시: 100골드를 지급하려면 1000000 으로 설정 (1골드 = 10,000코퍼)
 #        Default:     100000
 #
-LoginRewards.DailyGoldAmount = 100000
+LoginRewards.DailyGoldAmount = 50000
 
 #
 #    LoginRewards.AnnounceMessage
@@ -85,4 +85,5 @@ LoginRewards.AnnounceMessage = "일일 접속 보상으로 %gold%골드를 받�
 #                     0 - (표시 안 함)
 #
 LoginRewards.ShowAnnounceMessage = 1
+
 
