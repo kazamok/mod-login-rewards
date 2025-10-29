@@ -76,7 +76,7 @@ LoginRewards.DailyGoldAmount = 50000
 #                     %gold% 부분은 실제 지급된 골드 금액으로 자동 변경됩니다.
 #        Default:     "일일 접속 보상으로 %gold%골드를 받았습니다!"
 #
-LoginRewards.AnnounceMessage = "일일 접속 보상으로 %gold%골드를 받았습니다!"
+LoginRewards.AnnounceMessage = "[시스템] 일일 접속 보상으로 %gold%골드를 받았습니다!"
 
 #
 #    LoginRewards.ShowAnnounceMessage
@@ -85,5 +85,6 @@ LoginRewards.AnnounceMessage = "일일 접속 보상으로 %gold%골드를 받�
 #                     0 - (표시 안 함)
 #
 LoginRewards.ShowAnnounceMessage = 1
+
 
 
