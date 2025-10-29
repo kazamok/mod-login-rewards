@@ -259,9 +259,9 @@ void LoadModuleSpecificConfig_LoginRewards()
     // 기본값 설정
     g_loginRewardsEnabled = true;
     g_loginRewardsShowModuleStatus = true;
-    g_loginRewardsDailyGoldAmount = 100000; // 10골드
+    g_loginRewardsDailyGoldAmount = 12345; // 12345쿠퍼
     g_loginRewardsDailyResetHourKST = 0;
-    g_loginRewardsAnnounceMessage = "|cffFF69B4[일일접속보상]|r 일일 접속 보상으로 %gold%골드를 받았습니다!";
+    g_loginRewardsAnnounceMessage = "|cffFF69B4[시스템]|r 일일 접속 보상으로 %gold%골드를 받았습니다!";
     g_loginRewardsShowAnnounceMessage = true;
 
     std::string line;
@@ -526,3 +526,4 @@ void Addmod_login_rewardsScripts()
     new mod_login_rewards_player();
 
 }
+
