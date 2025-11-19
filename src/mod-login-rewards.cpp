@@ -480,8 +480,9 @@ public:
             {
                 // 3. 최종 보상 지급
                 player->ModifyMoney(g_loginRewardsDailyGoldAmount);
+                int Print4Amount = g_loginRewardsDailyGoldAmount / 10000; // 출력용으로 선언
                 std::string charName = player->GetName();
-                LOG_INFO("module", "[접속 보상] 계정 {} (캐릭터: {}, IP: {})에게 {} 골드 지급.", accountId, charName, ipAddress, g_loginRewardsDailyGoldAmount);
+                LOG_INFO("module", "[접속 보상] 계정 {} (캐릭터: {}, IP: {})에게 {} 골드 지급.", accountId, charName, ipAddress, Print4Amount);
 
                 // 계정과 IP 모두에 현재 시간으로 기록 업데이트
                 g_accountLastRewardInfo[accountId] = { currentTime, charName };
@@ -526,5 +527,6 @@ void Addmod_login_rewardsScripts()
     new mod_login_rewards_player();
 
 }
+
 
 
